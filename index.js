@@ -6,8 +6,18 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.wbmojlp.mongodb.net/?appName=Cluster0`;
 
 const port = process.env.PORT || 3000
-const crypto = require("crypto");
 
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./firebase-adminsdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+
+
+const crypto = require("crypto");
 function generateTrackingId() {
   const prefix = "PRCL"; // your brand prefix
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // YYYYMMDD
@@ -20,6 +30,28 @@ console.log(generateTrackingId());
 // middle Ware  
 app.use(cors())
 app.use(express.json())
+
+ const verifyFirebaseToken = async (req,res,next)=>{
+    console.log("in the verified headers", req.headers.authorization) 
+      if(!req.headers.authorization){
+        return res.status(401).send({message:'Unauthorized Access'})
+      }
+      const token = req.headers.authorization.split(" ")[1]
+      if(!token){
+         return res.status(401).send({message:'Unauthorized Access'})
+      }
+      try{
+      const decoded = await admin.auth().verifyIdToken(token)
+      console.log('after decoded in the token',decoded)
+      req.decoded_email = decoded.email
+      next() 
+      }
+      catch(eror){
+         return res.status(401).send({message:'Unauthorized Access'})
+      }
+
+  
+ }
 // const stripe = require('stripe')(process.env.STRIPE_SECRETE);
 
 const stripe = require('stripe')(process.env.STRIPE_SECRETE);
@@ -39,8 +71,35 @@ async function run() {
     await client.connect();
 
     const db = client.db("zap_shift_db");
+    const userCollection = db.collection("users")
     const parcelCollection = db.collection("parcels");
     const paymentCollection = db.collection("payments")
+    const riderCollection = db.collection("riders")
+
+
+
+    // user related api 
+    app.post('/users',async(req,res)=>{
+         const user = req.body
+         user.role = 'user'
+         user.createAt = new Date();
+         
+          const email = user.email;
+
+          // google sign  check ager user naki new user 
+          const userExist = await userCollection.findOne({email})
+          if(userExist){
+            return res.send({message:'user exist'})
+          }
+
+
+
+         const result  = await userCollection.insertOne(user)
+         res.send(result)
+
+    })
+
+
 
   //parcel api  
    app.get('/parcels',async(req,res)=>{
@@ -204,16 +263,43 @@ async function run() {
     })  
 
     //payment related api  
-    app.get('/payments',async(req,res)=>{
+    app.get('/payments', verifyFirebaseToken,async(req,res)=>{
        const email = req.query.email
        const query = {};
        if(email){
         query.customerEmail = email
+        if(email !==req.decoded_email){
+          return res.status(403).send({message:'Forbidden Access'})
+        }
        }
-       const cursor = paymentCollection.find(query)
+       const cursor = paymentCollection.find(query).sort({paidAt:-1})
        const result = await cursor.toArray()
        res.send(result)
     })
+
+   //rider  related API 
+
+
+
+
+
+
+   app.post('/riders',async(req,res)=>{
+           const rider = req.body
+           rider.status = 'pending'
+           rider.createdAt = new Date()
+           const result = await riderCollection.insertOne(rider)
+           res.send(result)
+
+
+   })
+
+
+
+
+
+
+
    
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
