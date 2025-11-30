@@ -54,7 +54,7 @@ app.use(express.json())
  }
 // const stripe = require('stripe')(process.env.STRIPE_SECRETE);
 
-const stripe = require('stripe')(process.env.STRIPE_SECRETE);
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 
 const client = new MongoClient(uri, {
@@ -164,6 +164,7 @@ async function run() {
     },
     customer_email:paymentInfo.senderEmail,
     mode: 'payment',
+      locale: 'en',
     success_url: `${process.env.SITE_DOMAIN}/dashbord/payment-success`,
     cancel_url: `${process.env.SITE_DOMAIN}/dashbord/payment-cancelled`,
   })
@@ -195,6 +196,7 @@ async function run() {
      parcelId :paymentInfo.parcelId
     },
     customer_email:paymentInfo.senderEmail,
+    locale: 'en',
     mode: 'payment',
     success_url: `${process.env.SITE_DOMAIN}/dashbord/payment-success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${process.env.SITE_DOMAIN}/dashbord/payment-cancelled`,
@@ -279,6 +281,17 @@ async function run() {
 
    //rider  related API 
 
+    app.get('/riders',async(req,res)=>{
+        const status = req.query.status
+        const query = {}
+          if(status){
+            query.status = status
+          }
+        const cursor = riderCollection.find(query)
+        const result = await cursor.toArray()
+        res.send(result)
+
+   })
 
 
 
@@ -294,7 +307,35 @@ async function run() {
 
    })
 
+   app.patch('/riders/:id',verifyFirebaseToken ,async(req,res)=>{
+            const  id = req.params.id
+            const status = req.body.status
+            const  query ={_id: new ObjectId(id)}
+             const updateDoc = {
+              $set:{
+                status:status
+              }
+             }
+             const result = await riderCollection.updateOne(query,updateDoc)
+             if(status==="Approved"){
+              const email = req.body.email
+              const userQuery = {email:email}
+              const updateUser = {
+                $set :{
+                  user : 'rider'
+                }
+              }
+              const resultUser = await userCollection.updateOne(userQuery,updateUser)
+             }
+             res.send(result)
+   })
 
+  app.delete('/riders/:id',async(req,res)=>{
+     const id = req.params.id
+     const query = {_id: new ObjectId(id)}
+     const result = await riderCollection.deleteOne(query)
+     res.send(result)
+  })
 
 
 
