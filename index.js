@@ -76,9 +76,56 @@ async function run() {
     const paymentCollection = db.collection("payments")
     const riderCollection = db.collection("riders")
 
+    //  middleware 
+      const verifyAdmin =async(req,res,next)=>{
+        const email = req.decoded_email
+        const  query = {email}
+        const user = await userCollection.findOne(query);
+        if(!user ||user.role !=='admin'){
+           return res.status(403).send({message:'forbidden  Access'})
+        }
+
+
+        next()
+      }
+
+
+
 
 
     // user related api 
+     app.get('/users',verifyFirebaseToken,async(req,res)=>{
+      const serchText = req.query.serchText
+      const query = {}
+       if(serchText){
+        // query.displayName = { $regex: serchText , $options:'i'}
+
+        query.$or= [
+          { displayName :{ $regex: serchText , $options:'i'}} ,
+          { email :{ $regex: serchText , $options:'i'}} 
+        ]
+       }
+
+
+
+
+
+      const cursor = userCollection.find(query).sort({createAt:-1}).limit(5)
+      const result = await cursor.toArray()
+      res.send(result)
+     })
+     app.get('/users/:id',async(req,res)=>{
+      
+     })
+     app.get('/users/:email/role',async(req,res)=>{
+          const email = req.params.email
+          const query = {email}
+           const user = await userCollection.findOne(query)
+           res.send({role: user?.role||'user'})
+     })
+
+
+
     app.post('/users',async(req,res)=>{
          const user = req.body
          user.role = 'user'
@@ -97,6 +144,19 @@ async function run() {
          const result  = await userCollection.insertOne(user)
          res.send(result)
 
+    })
+
+    app.patch('/users/:id',verifyFirebaseToken,verifyAdmin,async(req,res)=>{
+          const id = req.params.id
+          const roleInfo  = req.body
+          const query = {_id : new ObjectId(id)}
+          const updateDoc = {
+            $set :{
+              role: roleInfo.role
+            }
+          }
+          const result = await userCollection.updateOne(query,updateDoc) 
+          res.send(result)
     })
 
 
@@ -307,7 +367,7 @@ async function run() {
 
    })
 
-   app.patch('/riders/:id',verifyFirebaseToken ,async(req,res)=>{
+   app.patch('/riders/:id',verifyFirebaseToken,verifyAdmin, async(req,res)=>{
             const  id = req.params.id
             const status = req.body.status
             const  query ={_id: new ObjectId(id)}
@@ -322,7 +382,7 @@ async function run() {
               const userQuery = {email:email}
               const updateUser = {
                 $set :{
-                  user : 'rider'
+                  role : 'rider'
                 }
               }
               const resultUser = await userCollection.updateOne(userQuery,updateUser)
